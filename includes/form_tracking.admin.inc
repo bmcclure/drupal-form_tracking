@@ -22,9 +22,31 @@ function form_tracking_admin_settings($form, &$form_state) {
   $form['options'] = form_tracking_admin_options();
   $form['forms'] = form_tracking_admin_forms();
 
+  $form['actions']['submit']['#submit'][] = 'form_tracking_admin_settings_submit';
+
   drupal_alter('form_tracking_admin_options', $form, $form_state);
 
   return system_settings_form($form);
+}
+
+function form_tracking_admin_settings_submit($form, &$form_state) {
+  dpm($form);
+  dpm($form_state);
+  
+  // TODO: Replace this with the actual array of results
+  $tracking_forms = array();
+
+  $hook = 'form_tracking_setup';
+
+  foreach ($tracking_forms as $module => $forms) {
+    if (!module_hook($module, $hook)) {
+      continue;
+    }
+
+    foreach ($forms as $form_id => $form) {
+      module_invoke($module, $hook, $form_id);
+    }
+  }
 }
 
 function form_tracking_admin_forms() {

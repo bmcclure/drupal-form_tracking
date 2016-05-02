@@ -6,7 +6,7 @@
  * Time: 7:50 PM
  */
 
-function form_tracking_entityform_form_type_info() {
+function form_tracking_entityform_form_tracking_form_type_info() {
   $info = [];
   
   $info['entityform'] = [
