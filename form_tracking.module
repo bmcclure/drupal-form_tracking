@@ -166,11 +166,9 @@ function form_tracking_data_exists($session_id) {
 }
 
 function form_tracking_lookup_data($session_id) {
-  $results = db_query('SELECT * FROM {form_tracking} WHERE sid = :sid LIMIT 1', [':sid' => $session_id]);
+  $result = db_query('SELECT * FROM {form_tracking} WHERE sid = :sid LIMIT 1', [':sid' => $session_id]);
 
-  if (empty($results)) {
-    return array();
-  }
+  $record = $result->fetchAssoc();
 
-  return $results[0]->data;
+  return ($record) ? $record['data'] : array();
 }
