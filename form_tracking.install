@@ -31,7 +31,6 @@ function form_tracking_schema() {
         'description' => 'Tracking data for this session',
         'type' => 'text',
         'not null' => TRUE,
-        'default' => '',
       ],
     ],
     'primary key' => array('sid'),
