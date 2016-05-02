@@ -34,7 +34,7 @@ function form_tracking_schema() {
         'default' => '',
       ],
     ],
-    'primary_key' => 'sid'
+    'primary key' => array('sid'),
   ];
 
   return $schema;
