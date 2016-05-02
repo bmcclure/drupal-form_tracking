@@ -20,6 +20,31 @@ function form_tracking_webform_form_tracking_form_type_info() {
   return $info;
 }
 
+function form_tracking_webform_forms() {
+  $forms = array();
+
+  $query = new EntityFieldQuery();
+
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'webform');
+
+  $result = $query->execute();
+
+  if (!empty($result['node'])) {
+    foreach (array_keys($result['node']) as $nid) {
+      $node = node_load($nid);
+
+      $form_id = 'webform_client_form_' . $nid;
+
+      $title = $node->title . " ($form_id)";
+
+      $forms[$form_id] = $title;
+    }
+  }
+
+  return $forms;
+}
+
 /**
  * @param $data
  * @param $form
