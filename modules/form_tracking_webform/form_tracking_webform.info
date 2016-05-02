@@ -1,0 +1,7 @@
+name = "Webform Form Tracking"
+description = "Form Tracking plugin for Webforms"
+package = Form tracking
+core = 7.x
+
+dependencies[] = form_tracking
+dependencies[] = webform

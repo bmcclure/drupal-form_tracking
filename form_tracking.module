@@ -1,0 +1,426 @@
+<?php
+/**
+ *  Webform Visitor Data Control
+ */
+
+function form_tracking_form_type_info() {
+  $data = &drupal_static(__FUNCTION__);
+
+  if(!isset($data)) {
+    $data = module_invoke_all('form_tracking_forms_info');
+
+    $default = [
+      'name' => 'Form API Form',
+      'module' => 'form_tracking',
+      'weight' => 0,
+    ];
+
+    foreach ($data as $form_type_id => $form_type_info) {
+      $data[$form_type_id] = $form_type_info + $default;
+    }
+  }
+
+  return $data;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function form_tracking_permission() {
+  return array(
+    'administer form tracking' => array(
+      'title' => t('Administer Form Tracking'),
+      'description' => t('Allows users to configure Form Tracking'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ *   hook_menu()
+ *   I hate this function...well, specifically the name.
+ *   This ain't no menu.
+ */
+function form_tracking_menu() {
+  $items = [];
+
+  $items['admin/config/system/form-tracking'] = [
+    'access arguments' => ['administer form tracking'],
+    'title' => 'Form Tracking settings',
+    'description' => 'Configure Form Tracking',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => ['form_tracking_admin_settings'],
+    'file' => 'includes/form_tracking.admin.inc',
+  ];
+
+  return $items;
+}
+
+function form_tracking_enabled_forms() {
+  $forms = &drupal_static(__FUNCTION__);
+
+  if (!isset($forms)) {
+    $forms = [];
+
+    $info = form_tracking_form_type_info();
+
+    foreach ($info as $form_type_id => $form_type_info) {
+      $forms[$form_type_id] = variable_get("form_tracking_enabled_forms_$form_type_id", []);
+    }
+  }
+
+  return $forms;
+}
+
+function form_tracking_get_enabled_type($form_id) {
+  $enabled_forms = form_tracking_enabled_forms();
+
+  foreach ($enabled_forms as $form_type => $forms) {
+    if (in_array($form_id, $forms)) {
+      return $form_type;
+    }
+  }
+
+  return false;
+}
+
+function form_tracking_form_alter(&$form, &$form_data, $form_id) {
+  $enabled_type = form_tracking_get_enabled_type($form_id);
+
+  if (!$enabled_type) {
+    return;
+  }
+
+  $data = form_tracking_get_data_for_session();
+  
+  if (empty($data)) {
+    return;
+  }
+
+  $info = form_tracking_form_type_info();
+  $module = $info[$enabled_type]['module'];
+  $function = $module . '_form_tracking_inject';
+
+  // Call the module responsible for injecting the visitor data into the form
+  if (function_exists($function)) {
+    $parameters = array($data, &$form, &$form_data);
+
+    call_user_func_array($function, $parameters);
+  }
+}
+
+/**
+ * @param null $session_id
+ * @param bool $update Whether or not to add to the session data if applicable
+ *
+ * @return array
+ */
+function form_tracking_get_data_for_session($session_id = NULL, $update = TRUE) {
+  $active_session = ($session_id == NULL);
+
+  if ($active_session) {
+    $session_id = session_id();
+  } else {
+    $update = FALSE;
+  }
+
+  if (!$update || !$active_session) {
+    return form_tracking_lookup_data($session_id);
+  }
+
+  $data = [
+    'session_id' => $session_id,
+    'timestamp' => time(),
+  ];
+
+  $data += module_invoke_all('form_tracking_session_data', $data);
+
+  drupal_alter('form_tracking_session_data', $data);
+
+  form_tracking_save_data($session_id, $data);
+
+  return $data;
+}
+
+function form_tracking_save_data($session_id, $data = null) {
+  if (is_object($session_id) || is_array($session_id)) {
+    $record = $session_id;
+  } else {
+    $record = [
+      'sid' => $session_id,
+      'data' => $data
+    ];
+  }
+
+  if (form_tracking_data_exists($session_id)) {
+    drupal_write_record('form_tracking', $record, 'sid');
+  } else {
+    drupal_write_record('form_tracking', $record);
+  }
+}
+
+function form_tracking_data_exists($session_id) {
+  $results = form_tracking_lookup_data($session_id);
+
+  return (!empty($results));
+}
+
+function form_tracking_lookup_data($session_id) {
+  $results = db_query('SELECT * FROM {form_tracking} WHERE sid = :sid LIMIT 1', [':sid' => $session_id]);
+
+  if (empty($results)) {
+    return array();
+  }
+
+  return $results[0]->data;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ *   hook_init() to grab posted data from the management form that is built below
+ */
+function webform_visitor_data_init() {
+  // Make sure we are on the right page
+  if (arg(0) == 'webform_visitor_data' && isset($_REQUEST['op']) && $_REQUEST['op'] == 'Submit') {
+    // Cycle through each webform and set the switch for either on or off (1/0)
+    $query = new EntityFieldQuery();
+
+    $query->entityCondition('entity_type', 'webform')
+      ->entityCondition('bundle', 'webform');
+
+    $result = $query->execute();
+
+    if (isset($result['node'])) {
+      foreach (array_keys($result['node']) as $nid) {
+        webform_visitor_data_update_nid($nid);
+      }
+    }
+  }
+}
+
+
+
+function webform_visitor_data_get_webform_ids() {
+  $webforms = &drupal_static(__FUNCTION__);
+
+  if (!isset($webforms)) {
+    $webforms = [];
+
+    foreach (array_keys($_REQUEST) as $key) {
+      if (strpos($key, 'webform_') === 0) {
+        $webforms[] = str_replace('webform_', '', $key);
+      }
+    }
+  }
+  
+  return $webforms;
+}
+
+function webform_visitor_data_exists_for_webform($nid) {
+  $check_result = db_select('webform_visitor_data')
+    ->fields('webform_visitor_data', ['webform_nid'])
+    ->condition('webform_nid', $nid)
+    ->range(0, 1)
+    ->execute()
+    ->rowCount();
+
+  return ($check_result == 1);
+}
+
+/**
+ * Create or update row in webform_visitor_data table for a webform nid
+ *
+ * @param $nid
+ *
+ * @throws \Exception
+ * @internal param $webform_set
+ *
+ */
+function webform_visitor_data_update_nid($nid) {
+  $webforms = webform_visitor_data_get_webform_ids();
+
+  $webform_set = (in_array($nid, $webforms)) ? 1 : 0;
+  
+  // If no then create row
+  if (!webform_visitor_data_exists_for_webform($nid)) {
+    db_insert('webform_visitor_data')
+      ->fields(['webform_nid', 'visitor_data'])
+      ->values([
+        'webform_nid' => $nid,
+        'visitor_data' => $webform_set,
+      ])
+      ->execute();
+  } else {
+    db_update('webform_visitor_data')
+      ->fields(['visitor_data' => $webform_set])
+      ->condition('webform_nid', $nid)
+      ->execute();
+  }
+}
+
+// Let's call the form, but only if you are an admin!
+function webform_visitor_data_page() {
+  return drupal_get_form('webform_visitor_data_build_form');
+}
+
+function webform_visitor_data_component_exists($webform_nid) {
+  $nodes = &drupal_static(__FUNCTION__);
+
+  if (!isset($nodes)) {
+    $nodes = [];
+  }
+
+  if (!isset($nodes[$webform_nid])) {
+    $nodes[$webform_nid] = node_load($webform_nid);
+  }
+
+  $node = $nodes[$webform_nid];
+
+  if (isset($node->webform['components'])) {
+    foreach ($node->webform['components'] as $component) {
+      if (isset($component['form_key']) && $component['form_key'] == 'visitor_data') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * If the component has not been created, then create it
+ *
+ * @param $webform_nid
+ */
+function webform_visitor_data_component_setup($webform_nid) {
+  if (webform_visitor_data_exists_for_webform($webform_nid)
+    && !webform_visitor_data_component_exists($webform_nid)) {
+    webform_visitor_data_webform_component_insert($webform_nid);
+  }
+}
+
+function webform_visitor_data_build_form($form, &$form_state) {
+  $form['description'] = [
+    '#type' => 'item',
+    '#title' => t('Webform Visitor Data'),
+  ];
+
+  // Grab all the webforms and create a checkbox for each
+  $results = db_query('SELECT nid, title FROM {node} WHERE type = :type', [':type' => 'webform']);
+
+  foreach ($results as $result) {
+    webform_visitor_data_component_setup($result->nid);
+
+    $form['webform_' . $result->nid] = [
+      '#type' => 'checkbox',
+      '#title' => l(t(check_plain($result->title)), 'node/' . $result->nid),
+      '#default_value' => webform_visitor_data_exists_for_webform($result->nid),
+    ];
+  }
+
+  $form['submit'] = [
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  ];
+
+  return $form;
+}
+
+function webform_visitor_data_webform_component_insert($nid) {
+  if (!is_numeric($nid)) {
+    return;
+  }
+
+  $component = [
+    'name' => 'Visitor Data',
+    'form_key' => 'visitor_data',
+    'type' => 'hidden',
+    'mandatory' => 0,
+    'weight' => 100,
+    'nid' => $nid,
+    'pid' => 0,
+    'extra' => ['title_display' => 'inline'],
+  ];
+
+  webform_component_insert($component);
+}
+
+/**
+ *   hook_form_alter()
+ *   So this is the meat of the journey.
+ *   Here is where we will actually put the visitor data
+ *   into the form...for science!
+ */
+function webform_visitor_data_form_alter(&$form, &$form_state, $form_id) {
+  if (strpos($form_id, 'webform_client') === FALSE
+    || !isset($form['submitted']['visitor_data'])) {
+    return;
+  }
+
+  $path = current_path();
+  $path_alias = drupal_lookup_path('alias', $path);
+  $node = node_load(arg(1));
+
+  /**
+   *  Initial testing before I only needed the refering page title
+   */
+  // Grab the appropriate data and stuff it into a json.
+  // Probably not the best idea, but it'll work for now.
+  //$stuff_goes_here = array();
+  //array_push($stuff_goes_here, 'Page Title: ' . $node->title);
+  //array_push($stuff_goes_here, 'Page URL: ' . $path_alias);
+  //array_push($stuff_goes_here, 'Server Referer: ' . $_SERVER['HTTP_REFERER']);
+  //$sgh = json_encode($stuff_goes_here);
+
+  /**
+   *  Need to get that page title and set it.
+   *  Of coures, now that I'm typing this I can see this may be an issue
+   *  with multiple webform submissions from multiple CTA's.
+   */
+  session_start();
+  if (!isset($_SESSION['referer'])) {
+    $_SESSION['referer'] = $_SERVER['HTTP_REFERER'];
+  }
+
+  /**
+   *  After typing that comment I started thinking about the CTA's.
+   *  The original RFP was for the page title where the CTA link of the webform exists.
+   *  Now I'm wondering if I should more finely control this by reading the actual
+   *  CTA just in case there are multiple CTA's to one form.
+   *  Not sure this is an issue but I'm thinking for A/B testing.
+   */
+
+  $sgh = getTitle($_SESSION['referer']);
+  $form['submitted']['visitor_data']['#value'] = $sgh;
+  return ($form);
+}
+
+
+
+function getTitle($Url) {
+  $str = file_get_contents($Url);
+
+  if (strlen($str) > 0) {
+    preg_match('/\<title\>(.*)\<\/title\>/', $str, $title);
+
+    return $title[1];
+  }
+}

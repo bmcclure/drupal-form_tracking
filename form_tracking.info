@@ -1,0 +1,4 @@
+name = "Form Tracking"
+description = "A base module to inject visitor tracking data into your forms"
+package = Form tracking
+core = 7.x

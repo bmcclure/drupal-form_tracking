@@ -1,0 +1,7 @@
+name = "Statistics Support for Form Tracking"
+description = "Form Tracking plugin for Statistics"
+package = Form tracking
+core = 7.x
+
+dependencies[] = form_tracking
+dependencies[] = statistics

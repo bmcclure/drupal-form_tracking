@@ -1,0 +1,7 @@
+name = "Entityform Form Tracking"
+description = "Form Tracking plugin for Entityform"
+package = Form tracking
+core = 7.x
+
+dependencies[] = form_tracking
+dependencies[] = entityform
