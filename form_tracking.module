@@ -23,6 +23,109 @@ function form_tracking_form_type_info() {
   return $data;
 }
 
+function form_tracking_data_keys() {
+  $keys = &drupal_static(__FUNCTION__);
+
+  if (!isset($keys)) {
+    $keys = [];
+
+    $hook = 'form_tracking_data_keys';
+
+    $defaults = [
+      'module' => 'form_tracking',
+      'title' => '',
+      'visible' => TRUE,
+      'show_in_list' => TRUE,
+      'render_function' => 'form_tracking_render_data',
+    ];
+
+    foreach (module_implements($hook) as $module) {
+      $module_keys = module_invoke($module, $hook);
+
+      $defaults['module'] = $module;
+
+      foreach ($module_keys as $key => $key_info) {
+        $defaults['title'] = $key;
+
+        $keys[$key] = $key_info + $defaults;
+
+        $keys[$key]['visible'] = variable_get('form_tracking_key_visible_' . $key, $keys[$key]['visible']);
+      }
+    }
+  }
+
+  return $keys;
+}
+
+function form_tracking_render(&$data, $plain_text = FALSE, $title = TRUE) {
+  $title_template = $plain_text ? '%s' : '<h3>%s</h3>';
+  $list_items_template = $plain_text ? '%s' : '<dl>%s</dl>';
+  $keys = form_tracking_data_keys();
+  $items = ['list' => [], 'separate' => []];
+  $output = '';
+
+  if ($title) {
+    $output .= sprintf($title_template, 'Form Tracking Information');
+  }
+
+  foreach ($data as $key => $data_item) {
+    if (!isset($keys[$key]) || !$keys[$key]['visible'] || !function_exists($keys[$key]['render_function'])) {
+      continue;
+    }
+
+    $type = $keys[$key]['show_in_list'] ? 'list' : 'separate';
+
+    $items[$type][] = call_user_func($keys[$key]['render_function'], $key, $data_item, $keys[$key], $plain_text);
+  }
+
+  if (!empty($items['list'])) {
+    $output .= sprintf($list_items_template, implode("\n", $items['list'])) . "\n";
+  }
+
+  $output .= implode("\n", $items['separate']);
+
+  return $output;
+}
+
+function form_tracking_render_data($key, $data, $key_info, $plain_text) {
+  if ($plain_text) {
+    $template = '%s: %s';
+    $data_template = '%s';
+  } else {
+    $template = $key_info['show_in_list'] ? '<dt>%s</dt>%s' : '<h4>%s</h4>%s';
+    $data_template = $key_info['show_in_list'] ? '<dd>%s</dd>' : '<p>%s</p>';
+  }
+
+  $items = [];
+
+  foreach ((array) $data as $data_item) {
+    $items[] = sprintf($data_template, $data_item);
+  }
+
+  return sprintf($template, $key_info['title'], implode("\n", $items));
+}
+
+function form_tracking_render_timestamp($key, $data, $key_info, $plain_text) {
+  $time = date('D, d M Y H:i:s', $data);
+
+  return form_tracking_render_data($key, $time, $key_info, $plain_text);
+}
+
+function form_tracking_form_tracking_data_keys() {
+  return [
+    'session_id' => [
+      'title' => 'Session ID',
+      'show_in_list' => FALSE,
+      'visible' => FALSE,
+    ],
+    'timestamp' => [
+      'title' => 'Timestamp',
+      'show_in_list' => FALSE,
+      'render_function' => 'form_tracking_render_timestamp',
+    ]
+  ];
+}
+
 /**
  * Implements hook_permission().
  */
@@ -76,12 +179,12 @@ function form_tracking_get_enabled_type($form_id) {
   $enabled_forms = form_tracking_enabled_forms();
 
   foreach ($enabled_forms as $form_type => $forms) {
-    if (in_array($form_id, $forms)) {
+    if (in_array($form_id, $forms, TRUE)) {
       return $form_type;
     }
   }
 
-  return false;
+  return FALSE;
 }
 
 function form_tracking_form_alter(&$form, &$form_data, $form_id) {
@@ -103,7 +206,7 @@ function form_tracking_form_alter(&$form, &$form_data, $form_id) {
 
   // Call the module responsible for injecting the visitor data into the form
   if (function_exists($function)) {
-    $parameters = array($data, &$form, &$form_data);
+    $parameters = array(&$data, &$form, &$form_data);
 
     call_user_func_array($function, $parameters);
   }

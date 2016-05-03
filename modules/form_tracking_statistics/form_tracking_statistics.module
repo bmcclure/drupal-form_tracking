@@ -6,14 +6,79 @@
  * Time: 7:50 PM
  */
 
+function form_tracking_statistics_form_tracking_data_keys() {
+  $path_size = variable_get('form_tracking_statistics_visitor_path_size', 20);
+
+  return [
+    'path' => [
+      'title' => 'Visitor Path',
+      'show_in_list' => FALSE,
+      'render_function' => 'form_tracking_statistics_render_path',
+      'path_size' => $path_size,
+    ],
+    'source' => [
+      'title' => 'Source',
+    ],
+  ];
+}
+
+function form_tracking_statistics_form_tracking_key_options($key, $key_info) {
+  $options = [];
+
+  switch ($key) {
+    case 'path':
+      $options['form_tracking_statistics_visitor_path_size'] = [
+        '#type' => 'textfield',
+        '#title' => t('Visitor path size'),
+        '#description' => t("Enter the maximum number of history items to show in the visitor path."),
+        '#default_value' => $key_info['path_size'],
+      ];
+      break;
+  }
+
+  return $options;
+}
+
+function form_tracking_statistics_render_path($key, $data, $key_info, $plain_text) {
+  $template = $plain_text ? "Visitor Path\n%s" : '<h4>Visitor Path</h4><ol>%s</ol>';
+
+  $list_items = [
+    'title' => 'Title',
+    'path' => 'Path',
+    'time_on_page' => 'Time on page'
+  ];
+
+  $item_template = $plain_text ? "%s\n%s" : '<li>%s<dl>%s</dl></li>';
+  $list_item_template = $plain_text ? '  %s: %s' : '<dt>%s</dt><dd>%s</dd>';
+  $size = variable_get('form_tracking_statistics_visitor_path_size', 20);
+  $offset = -$size;
+  $path_items = array_slice($data, $offset);
+  $items = [];
+  
+  foreach ($path_items as $path_item) {
+    $item_output = [];
+
+    foreach ($list_items as $id => $title) {
+      $item_output[] = sprintf($list_item_template, $title, $path_item[$id]);
+    }
+
+    $items[] = sprintf($item_template, $path_item['title'], implode("\n", $item_output));
+  }
+
+  return sprintf($template, implode("\n", $items));
+}
+
 /**
  * @param $data
  *
  * @return array
  */
 function form_tracking_statistics_form_tracking_session_data($data) {
+  $path = form_tracking_statistics_get_visitor_path($data['session_id'], $data['timestamp']);
+
   $new_data = [
-    'path' => form_tracking_statistics_get_visitor_path($data['session_id'], $data['timestamp']),
+    'path' => $path,
+    'source' => (isset($path[0]['referrer'])) ? $path[0]['referrer'] : '',
   ];
 
   return $new_data;

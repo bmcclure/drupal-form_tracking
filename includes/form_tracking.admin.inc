@@ -22,7 +22,7 @@ function form_tracking_admin_settings($form, &$form_state) {
   $form['options'] = form_tracking_admin_options();
   $form['forms'] = form_tracking_admin_forms();
 
-  $form['actions']['submit']['#submit'][] = 'form_tracking_admin_settings_submit';
+  $form['#submit'][] = 'form_tracking_admin_settings_submit';
 
   drupal_alter('form_tracking_admin_options', $form, $form_state);
 
@@ -30,23 +30,44 @@ function form_tracking_admin_settings($form, &$form_state) {
 }
 
 function form_tracking_admin_settings_submit($form, &$form_state) {
-  dpm($form);
-  dpm($form_state);
-  
-  // TODO: Replace this with the actual array of results
-  $tracking_forms = array();
-
   $hook = 'form_tracking_setup';
+  $info = form_tracking_form_type_info();
 
-  foreach ($tracking_forms as $module => $forms) {
-    if (!module_hook($module, $hook)) {
+  foreach (form_tracking_admin_get_tracking_forms($form_state) as $form_type => $forms) {
+    if (!array_key_exists($form_type, $info)) {
       continue;
     }
 
-    foreach ($forms as $form_id => $form) {
-      module_invoke($module, $hook, $form_id);
+    $module = $info[$form_type]['module'];
+
+    if (module_hook($module, $hook)) {
+      foreach ($forms as $form_id) {
+        module_invoke($module, $hook, $form_id);
+      }
     }
   }
+}
+
+function form_tracking_admin_get_tracking_forms(&$form_state) {
+  $forms = [];
+
+  $info = form_tracking_form_type_info();
+
+  foreach ($info as $form_type_id => $form_type) {
+    $key = "form_tracking_enabled_forms_$form_type_id";
+
+    $forms[$form_type_id] = [];
+
+    if (!empty($form_state['values'][$key])) {
+      foreach ($form_state['values'][$key] as $form_id => $enabled) {
+        if ($enabled) {
+          $forms[$form_type_id][] = $form_id;
+        }
+      }
+    }
+  }
+
+  return $forms;
 }
 
 function form_tracking_admin_forms() {
@@ -83,7 +104,7 @@ function form_tracking_admin_forms() {
 function form_tracking_admin_options() {
   $options = array(
     '#type' => 'container',
-    '#prefix' => '<div id="commerce_tax_services_options">',
+    '#prefix' => '<div id="form_tracking_options">',
     '#suffix' => '</div>',
     '#tree' => FALSE,
   );
@@ -94,6 +115,54 @@ function form_tracking_admin_options() {
     '#description' => t('Unchecking this will turn off form tracking globally.'),
     '#default_value' => variable_get('form_tracking_enabled'),
   ];
+
+  $options['form_tracking_keys'] = form_tracking_admin_keys_options();
+
+  return $options;
+}
+
+function form_tracking_admin_keys_options() {
+  $options = [
+    '#type' => 'container',
+    '#prefix' => '<div id="form_tracking_key_options">',
+    '#suffix' => '</div>',
+    '#tree' => FALSE,
+  ];
+
+  $keys = form_tracking_data_keys();
+
+  foreach ($keys as $key => $key_info) {
+    $title = (!empty($key['title']) && $key['title'] != $key) ? "{$key['title']} ($key)" : $key;
+
+    $options['form_tracking_key_' . $key] = [
+      '#type' => 'fieldset',
+      '#title' => t('Key: @name', array('@name' => $title)),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+      '#tree' => FALSE,
+    ];
+
+    $options['form_tracking_key_' . $key]['options'] = form_tracking_admin_key_options($key, $key_info);
+  }
+
+  return $options;
+}
+
+function form_tracking_admin_key_options($key, $key_info) {
+  $options = [];
+
+  $options['form_tracking_key_visible_' . $key] = [
+    '#type' => 'checkbox',
+    '#title' => t('Visible'),
+    '#description' => t("Check to show {$key_info['title']} in tracking information."),
+    '#default_value' => $key_info['visible'],
+  ];
+
+  $hook = 'form_tracking_key_options';
+
+  if (module_hook($key_info['module'], $hook)) {
+    $options += module_invoke($key_info['module'], $hook, $key, $key_info);
+  }
 
   return $options;
 }

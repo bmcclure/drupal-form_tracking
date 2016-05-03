@@ -50,16 +50,12 @@ function form_tracking_webform_form_tracking_forms() {
  * @param $form
  * @param $form_data
  */
-function form_tracking_webform_form_tracking_inject($data, &$form, &$form_data) {
-  if (!isset($form['submitted']['visitor_data'])) {
-    return;
-  }
-
-  $form['submitted']['visitor_data']['#value'] = $data;
+function form_tracking_webform_form_tracking_inject(&$data, &$form, &$form_data) {
+  $form['submitted']['form_tracking_data']['#value'] = form_tracking_render($data, TRUE, FALSE);
 }
 
 function form_tracking_webform_form_tracking_setup($form_id) {
-  $nid = substr($form_id, strpos($form_id, '_', -1) + 1);
+  $nid = substr(strrchr($form_id, '_'), 1);
 
   if (is_numeric($nid)) {
     form_tracking_webform_component_setup($nid);
@@ -88,10 +84,8 @@ function form_tracking_webform_component_exists($webform_nid) {
     $nodes[$webform_nid] = node_load($webform_nid);
   }
 
-  $node = $nodes[$webform_nid];
-
-  if (isset($node->webform['components'])) {
-    foreach ($node->webform['components'] as $component) {
+  if (isset($nodes[$webform_nid]->webform['components'])) {
+    foreach ($nodes[$webform_nid]->webform['components'] as $component) {
       if (isset($component['form_key']) && $component['form_key'] == 'form_tracking_data') {
         return true;
       }
@@ -116,6 +110,8 @@ function form_tracking_webform_component_insert($nid) {
     'pid' => 0,
     'extra' => ['title_display' => 'inline'],
   ];
+
+  drupal_set_message("Added Form Tracking Data field to Webform $nid.");
 
   webform_component_insert($component);
 }
