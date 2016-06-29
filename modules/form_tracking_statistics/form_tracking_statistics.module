@@ -101,7 +101,7 @@ function form_tracking_statistics_get_visitor_path($session_id, $current_timesta
       'timestamp' => $record->timestamp,
       'time_on_page' => 0,
       'title' => form_tracking_statistics_get_title($record),
-      'path' => $record->path,
+      'path' => drupal_get_path_alias($record->path),
       'referrer' => $record->url,
       'uid' => $record->uid,
     ];
